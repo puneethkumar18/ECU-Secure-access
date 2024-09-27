@@ -1,68 +1,63 @@
 import socket
-import string
-import secrets
 import hashlib
+import secrets
+import string
 from rsa import *
+from constants import *
 
-port  = 8000
-host = "127.0.0.1"
 
-def generateRandomString(length):
-    charatcters = string.ascii_letters+string.digits+string.punctuation
-    random_string = "".join(secrets.choice(charatcters) for _ in range(length))
+def generate_random_string(length):
+    characters = string.ascii_letters + string.digits + string.punctuation
+    random_string = ''.join(secrets.choice(characters) for _ in range(length))
     return random_string
 
-
-def ecu_server():
-    ecu_socket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
-    ecu_socket.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
-    ecu_socket.bind((host,port))
-
-    ecu_socket.listen(5)
-    print("Ecu server started and listening")
+def ecu():
+    # Create a socket for the ecu
+    ecu_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    ecu_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    ecu_socket.bind((ECU_HOST, ECU_PORT))
+    ecu_socket.listen(1)
+    print("ecu started and listening...")
 
     while True:
+        # Accept tester connection
+        tester_socket, address = ecu_socket.accept()
+        print("Received connection from tester:", address)
 
-        #accept tester connection
-        tester_socket,address =  ecu_socket.accept()
-        print("Reciverd connection from the tester:", address)
+        # Check if the tester is trusted
+        tester_mac = tester_socket.recv(1024).decode()
+        if tester_mac not in TRUSTED_MAC_LIST:
+            print("This tester is not trusted ❌")
+            tester_socket.close()
+            continue
 
-        # gerate random string 
-        challenge_string = generateRandomString(128)
+        # Send challenge string to the tester
+        challenge_string = generate_random_string(128)
         challenge_string_hash = hashlib.sha256(challenge_string.encode('utf-8')).hexdigest()
+        tester_socket.send(challenge_string.encode())
 
-        # sending challenge string to the tester socket
-        tester_socket.sendall(challenge_string_hash.encode())
-        print("Challange string is successfully sent to the tester ")
+        # Connect to the trust center
+        trust_center_socket, address = ecu_socket.accept()
+        print("Received connection from trust center:", address)
 
-        #build connection between ecu and the Trust center
-        trust_center_socket,trust_address = ecu_socket.accept()
-        print("Connections established between ecu and trust center")
+        # Request trust center public key from the trust center
+        trust_center_public_key = trust_center_socket.recv(4096).decode()
+        print("Received Tester Public Key:", trust_center_public_key)
 
-        # recieve public key form the truest center
-        public_key =  trust_center_socket.recv(4096).decode()
-        print(" public key recieved from the trust center")
-
-        # recieve signed response from the tester
+        # Receive signed response from tester
         signed_response = tester_socket.recv(4096)
-        signed_response_valid = rsa_verify(signed_response,public_key,challenge_string_hash)
+        signed_response_is_valid = rsa_verify(trust_center_public_key, challenge_string_hash, signed_response)
 
-        if signed_response_valid:
-            print("Signature is valid \n Now i can to to tester securely")
-            response = "access granted!"
+        if signed_response_is_valid:
+            print("Signature is VALID\nI can now talk to the tester securely. 🔐✅")
+            response = "Access Granted!"
             tester_socket.send(response.encode())
 
         else:
-            print("signature is invalid \n so access denied")
-            response = "Access denied"
+            print("Invalid Signature")
+            response = "Signature was not verified!"
             tester_socket.send(response.encode())
 
+
 if __name__ == "__main__":
-    ecu_server()
-
-
-
-
-
-
-
+    ecu()

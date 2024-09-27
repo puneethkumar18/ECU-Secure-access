@@ -19,9 +19,11 @@ def trust_center():
 
         challenge_string = tester_socket.recv(1024).decode()
         challenge_string_hash = hashlib.sha256(challenge_string.encode('utf-8')).hexdigest()
+
+        print("Challenge String \n")
         print(challenge_string)
 
-        # Generate public and private keys
+    
         trust_center_private_key, trust_center_public_key = generate_rsa_keys()
 
         print(trust_center_private_key, trust_center_public_key)
@@ -50,4 +52,3 @@ def trust_center():
 
 if __name__ == "__main__":
     trust_center()
-    
